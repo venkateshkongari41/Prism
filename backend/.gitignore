@@ -1,0 +1,20 @@
+# Python
+__pycache__/
+*.py[cod]
+
+# Virtual environment
+backend/.venv/
+
+# Environment variables
+.env
+
+# Test/cache
+.pytest_cache/
+.coverage
+
+# VS Code
+.vscode/
+
+# Build files
+dist/
+build/
