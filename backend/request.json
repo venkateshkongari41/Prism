@@ -1,0 +1,10 @@
+{
+  "model": "fast",
+  "messages": [
+    {
+      "role": "user",
+      "content": "Hello Prism"
+    }
+  ],
+  "stream": false
+}

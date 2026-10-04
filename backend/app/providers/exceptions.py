@@ -20,3 +20,6 @@ class ProviderAuthenticationError(ProviderError):
 
 class ProviderBadRequestError(ProviderError):
     """Provider rejected the request."""
+    
+class ModelAliasNotFoundError(Exception):
+    """Requested model alias was not found."""

@@ -13,7 +13,7 @@ MODEL_ALIASES: dict[str, ModelAlias] = {
         model="openrouter/free",
     ),
     "smart": ModelAlias(
-        provider="mock",
-        model="mock-smart",
+        provider="huggingface",
+        model="huggingface/free",
     ),
 }

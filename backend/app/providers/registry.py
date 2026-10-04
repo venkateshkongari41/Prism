@@ -1,6 +1,7 @@
 from app.providers.mock import MockProvider
 from app.providers.openrouter import OpenRouterProvider
 from app.providers.provider import LLMProvider
+from app.providers.huggingface import HuggingFaceProvider
 
 
 class ProviderRegistry:
@@ -34,4 +35,9 @@ provider_registry.register(
 provider_registry.register(
     "openrouter",
     OpenRouterProvider(),
+)
+
+provider_registry.register(
+    "huggingface",
+    HuggingFaceProvider(),
 )

@@ -1,5 +1,5 @@
 from abc import ABC, abstractmethod
-from typing import Any
+from typing import Any, AsyncIterator
 
 
 class LLMProvider(ABC):
@@ -11,7 +11,14 @@ class LLMProvider(ABC):
         messages: list[dict[str, Any]],
         stream: bool = False,
     ) -> dict[str, Any]:
-        """
-        Send a chat completion request to the LLM provider.
-        """
         pass
+
+    async def stream_chat(
+        self,
+        model: str,
+        messages: list[dict[str, Any]],
+    ) -> AsyncIterator[str]:
+        raise NotImplementedError(
+            "Streaming is not implemented for this provider"
+        )
+        yield ""

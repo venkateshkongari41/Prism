@@ -13,7 +13,7 @@ from app.providers.exceptions import (
 from app.providers.provider import LLMProvider
 
 
-class OpenRouterProvider(LLMProvider):
+class HuggingFaceProvider(LLMProvider):
 
     async def chat(
         self,
@@ -22,8 +22,16 @@ class OpenRouterProvider(LLMProvider):
         stream: bool = False,
     ) -> dict[str, Any]:
 
+        if not settings.huggingface_api_key:
+            raise ProviderAuthenticationError(
+                "Hugging Face API key is not configured"
+            )
+
         headers = {
-            "Authorization": f"Bearer {settings.openrouter_api_key}",
+            "Authorization": (
+                f"Bearer "
+                f"{settings.huggingface_api_key}"
+            ),
             "Content-Type": "application/json",
         }
 
@@ -39,39 +47,45 @@ class OpenRouterProvider(LLMProvider):
             ) as client:
 
                 response = await client.post(
-                    f"{settings.openrouter_base_url}/chat/completions",
+                    (
+                        f"{settings.huggingface_base_url}"
+                        "/chat/completions"
+                    ),
                     headers=headers,
                     json=payload,
                 )
 
         except httpx.TimeoutException as exc:
             raise ProviderTimeoutError(
-                "OpenRouter request timed out"
+                "Hugging Face request timed out"
             ) from exc
 
         except httpx.RequestError as exc:
             raise ProviderTemporaryError(
-                f"OpenRouter request failed: {exc}"
+                f"Hugging Face request failed: {exc}"
             ) from exc
 
-        if response.status_code == 401:
+        if response.status_code in (401, 403):
             raise ProviderAuthenticationError(
-                "OpenRouter authentication failed"
+                "Hugging Face authentication failed"
             )
 
         if response.status_code == 400:
             raise ProviderBadRequestError(
-                "OpenRouter rejected the request"
+                "Hugging Face rejected the request"
             )
 
         if response.status_code == 429:
             raise ProviderRateLimitError(
-                "OpenRouter rate limit exceeded"
+                "Hugging Face rate limit exceeded"
             )
 
         if response.status_code >= 500:
             raise ProviderTemporaryError(
-                f"OpenRouter server error: {response.status_code}"
+                (
+                    "Hugging Face server error: "
+                    f"{response.status_code}"
+                )
             )
 
         response.raise_for_status()
@@ -99,7 +113,6 @@ class OpenRouterProvider(LLMProvider):
                     0,
                 ),
             }
-
         else:
             result["prism_usage"] = {
                 "prompt_tokens": 0,
@@ -116,8 +129,16 @@ class OpenRouterProvider(LLMProvider):
         messages: list[dict[str, Any]],
     ) -> AsyncIterator[str]:
 
+        if not settings.huggingface_api_key:
+            raise ProviderAuthenticationError(
+                "Hugging Face API key is not configured"
+            )
+
         headers = {
-            "Authorization": f"Bearer {settings.openrouter_api_key}",
+            "Authorization": (
+                f"Bearer "
+                f"{settings.huggingface_api_key}"
+            ),
             "Content-Type": "application/json",
         }
 
@@ -141,35 +162,45 @@ class OpenRouterProvider(LLMProvider):
 
                 async with client.stream(
                     "POST",
-                    f"{settings.openrouter_base_url}/chat/completions",
+                    (
+                        f"{settings.huggingface_base_url}"
+                        "/chat/completions"
+                    ),
                     headers=headers,
                     json=payload,
                 ) as response:
 
-                    if response.status_code == 401:
+                    if response.status_code in (
+                        401,
+                        403,
+                    ):
                         raise ProviderAuthenticationError(
-                            "OpenRouter authentication failed"
+                            "Hugging Face authentication failed"
                         )
 
                     if response.status_code == 400:
                         raise ProviderBadRequestError(
-                            "OpenRouter rejected the request"
+                            "Hugging Face rejected the request"
                         )
 
                     if response.status_code == 429:
                         raise ProviderRateLimitError(
-                            "OpenRouter rate limit exceeded"
+                            "Hugging Face rate limit exceeded"
                         )
 
                     if response.status_code >= 500:
                         raise ProviderTemporaryError(
-                            f"OpenRouter server error: {response.status_code}"
+                            (
+                                "Hugging Face server error: "
+                                f"{response.status_code}"
+                            )
                         )
 
                     response.raise_for_status()
 
-                    async for line in response.aiter_lines():
-
+                    async for line in (
+                        response.aiter_lines()
+                    ):
                         if not line:
                             continue
 
@@ -178,10 +209,13 @@ class OpenRouterProvider(LLMProvider):
 
         except httpx.TimeoutException as exc:
             raise ProviderTimeoutError(
-                "OpenRouter streaming request timed out"
+                "Hugging Face streaming request timed out"
             ) from exc
 
         except httpx.RequestError as exc:
             raise ProviderTemporaryError(
-                f"OpenRouter streaming request failed: {exc}"
+                (
+                    "Hugging Face streaming "
+                    f"request failed: {exc}"
+                )
             ) from exc

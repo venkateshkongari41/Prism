@@ -1,4 +1,6 @@
-from typing import Any
+import asyncio
+import json
+from typing import Any, AsyncIterator
 
 from app.providers.provider import LLMProvider
 
@@ -34,3 +36,36 @@ class MockProvider(LLMProvider):
                 "total_tokens": 20,
             },
         }
+
+    async def stream_chat(
+        self,
+        model: str,
+        messages: list[dict[str, Any]],
+    ) -> AsyncIterator[str]:
+
+        last_message = messages[-1]["content"]
+
+        words = f"Mock response for: {last_message}".split(" ")
+
+        for index, word in enumerate(words):
+
+            chunk = {
+                "id": "mock-stream-001",
+                "object": "chat.completion.chunk",
+                "model": model,
+                "choices": [
+                    {
+                        "index": 0,
+                        "delta": {
+                            "content": word if index == 0 else f" {word}"
+                        },
+                        "finish_reason": None,
+                    }
+                ],
+            }
+
+            yield f"data: {json.dumps(chunk)}\n\n"
+
+            await asyncio.sleep(0.1)
+
+        yield "data: [DONE]\n\n"
