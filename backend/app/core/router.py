@@ -1,3 +1,4 @@
+import json
 from dataclasses import dataclass
 from typing import Any, AsyncIterator
 
@@ -19,6 +20,7 @@ class RoutingResult:
     provider: str
     fallback_used: bool
     usage: dict[str, Any] | None = None
+    model: str | None = None
 
 
 @dataclass
@@ -26,6 +28,7 @@ class StreamResult:
     stream: AsyncIterator[str]
     provider: str
     fallback_used: bool
+    model: str | None = None
 
 
 RETRYABLE_ERRORS = (
@@ -38,6 +41,54 @@ NON_FALLBACK_ERRORS = (
     ProviderAuthenticationError,
     ProviderBadRequestError,
 )
+
+
+def _reported_provider(
+    response: dict[str, Any],
+    fallback: str,
+) -> str:
+    provider = response.get("provider")
+    if isinstance(provider, str) and provider.strip():
+        return provider
+    return fallback
+
+
+def _reported_model(
+    response: dict[str, Any],
+    fallback: str,
+) -> str:
+    model = response.get("model")
+    if isinstance(model, str) and model.strip():
+        return model
+    return fallback
+
+
+def _reported_stream_metadata(
+    chunk: str,
+    fallback_provider: str,
+    fallback_model: str,
+) -> tuple[str, str]:
+    for line in chunk.splitlines():
+        line = line.strip()
+        if not line.startswith("data:"):
+            continue
+
+        payload = line[5:].strip()
+        if not payload or payload == "[DONE]":
+            continue
+
+        try:
+            event = json.loads(payload)
+        except (TypeError, ValueError):
+            continue
+
+        if isinstance(event, dict):
+            return (
+                _reported_provider(event, fallback_provider),
+                _reported_model(event, fallback_model),
+            )
+
+    return fallback_provider, fallback_model
 
 
 class RoutingEngine:
@@ -78,9 +129,16 @@ class RoutingEngine:
 
                 return RoutingResult(
                     response=response,
-                    provider=provider_name,
+                    provider=_reported_provider(
+                        response,
+                        provider_name,
+                    ),
                     fallback_used=index > 0,
                     usage=usage,
+                    model=_reported_model(
+                        response,
+                        model,
+                    ),
                 )
 
             except NON_FALLBACK_ERRORS:
@@ -169,6 +227,7 @@ class RoutingEngine:
                         stream=self._empty_stream(),
                         provider=provider_name,
                         fallback_used=index > 0,
+                        model=model,
                     )
 
                 async def combined_stream():
@@ -177,10 +236,19 @@ class RoutingEngine:
                     async for chunk in stream_iterator:
                         yield chunk
 
+                reported_provider, reported_model = (
+                    _reported_stream_metadata(
+                        first_chunk,
+                        provider_name,
+                        model,
+                    )
+                )
+
                 return StreamResult(
                     stream=combined_stream(),
-                    provider=provider_name,
+                    provider=reported_provider,
                     fallback_used=index > 0,
+                    model=reported_model,
                 )
 
             except NON_FALLBACK_ERRORS:

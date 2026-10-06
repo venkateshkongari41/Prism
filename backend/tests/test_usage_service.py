@@ -121,6 +121,58 @@ def test_usage_summary():
     )
 
 
+def test_usage_summary_breaks_down_model_and_provider():
+    application_name = (
+        f"summary-breakdown-{uuid.uuid4()}"
+    )
+
+    record_usage(
+        application_id=3,
+        application_name=application_name,
+        model="model-one",
+        provider="provider-one",
+        status="success",
+        latency_ms=100.0,
+        total_tokens=15,
+        cost=0.01,
+    )
+    record_usage(
+        application_id=3,
+        application_name=application_name,
+        model="model-two",
+        provider="provider-two",
+        status="failed",
+        latency_ms=200.0,
+        total_tokens=5,
+        cost=0.002,
+    )
+
+    summary = get_usage_summary(
+        application_name=application_name
+    )
+
+    assert summary["model_provider_breakdown"] == [
+        {
+            "model": "model-one",
+            "provider": "provider-one",
+            "total_requests": 1,
+            "successful_requests": 1,
+            "failed_requests": 0,
+            "total_tokens": 15,
+            "total_cost": 0.01,
+        },
+        {
+            "model": "model-two",
+            "provider": "provider-two",
+            "total_requests": 1,
+            "successful_requests": 0,
+            "failed_requests": 1,
+            "total_tokens": 5,
+            "total_cost": 0.002,
+        },
+    ]
+
+
 def test_usage_by_application():
 
     application_a = (

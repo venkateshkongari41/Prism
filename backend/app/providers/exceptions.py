@@ -23,3 +23,6 @@ class ProviderBadRequestError(ProviderError):
     
 class ModelAliasNotFoundError(Exception):
     """Requested model alias was not found."""
+    
+class BudgetExceededError(Exception):
+    """Monthly budget has been exhausted."""

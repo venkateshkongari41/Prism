@@ -1,3 +1,5 @@
+import json
+
 import pytest
 
 from app.core.router import RoutingEngine
@@ -36,6 +38,9 @@ class AuthenticationFailingProvider(LLMProvider):
 
 
 class SuccessfulProvider(LLMProvider):
+    def __init__(self, provider=None, actual_model=None):
+        self.provider = provider
+        self.actual_model = actual_model
 
     async def chat(
         self,
@@ -45,13 +50,18 @@ class SuccessfulProvider(LLMProvider):
     ):
         return {
             "id": "test-response",
-            "model": model,
+            "model": self.actual_model or model,
             "choices": [],
             "usage": {
                 "prompt_tokens": 5,
                 "completion_tokens": 5,
                 "total_tokens": 10,
             },
+            **(
+                {"provider": self.provider}
+                if self.provider is not None
+                else {}
+            ),
         }
 
 
@@ -169,6 +179,106 @@ async def test_fallback_is_used_when_primary_fails():
         del ROUTES["test"]
     else:
         ROUTES["test"] = original_route
+
+
+@pytest.mark.asyncio
+async def test_response_provider_metadata_is_used(monkeypatch):
+    from app.providers.registry import provider_registry
+
+    monkeypatch.setattr(
+        provider_registry,
+        "_providers",
+        {
+            "provider-metadata": SuccessfulProvider(
+                provider="Cohere",
+                actual_model="cohere/north-mini-code:free",
+            ),
+        },
+    )
+    monkeypatch.setitem(
+        ROUTES,
+        "provider-metadata-test",
+        Route(
+            primary="provider-metadata",
+            fallbacks=(),
+        ),
+    )
+
+    result = await RoutingEngine().execute(
+        alias="provider-metadata-test",
+        model="test-model",
+        messages=[
+            {
+                "role": "user",
+                "content": "Hello",
+            }
+        ],
+    )
+
+    assert result.provider == "Cohere"
+    assert result.fallback_used is False
+    assert result.model == "cohere/north-mini-code:free"
+
+
+class ProviderMetadataStream(LLMProvider):
+    async def chat(
+        self,
+        model,
+        messages,
+        stream=False,
+    ):
+        return {}
+
+    async def stream_chat(self, model, messages):
+        yield (
+            "data: "
+            + json.dumps(
+                {
+                    "provider": "Cohere",
+                    "model": "cohere/north-mini-code:free",
+                    "choices": [],
+                }
+            )
+            + "\n\n"
+        )
+        yield "data: [DONE]\n\n"
+
+
+@pytest.mark.asyncio
+async def test_stream_response_provider_metadata_is_used(
+    monkeypatch,
+):
+    from app.providers.registry import provider_registry
+
+    monkeypatch.setattr(
+        provider_registry,
+        "_providers",
+        {
+            "provider-metadata": ProviderMetadataStream(),
+        },
+    )
+    monkeypatch.setitem(
+        ROUTES,
+        "provider-metadata-stream-test",
+        Route(
+            primary="provider-metadata",
+            fallbacks=(),
+        ),
+    )
+
+    result = await RoutingEngine().stream(
+        alias="provider-metadata-stream-test",
+        model="test-model",
+        messages=[
+            {
+                "role": "user",
+                "content": "Hello",
+            }
+        ],
+    )
+
+    assert result.provider == "Cohere"
+    assert result.model == "cohere/north-mini-code:free"
 
 
 @pytest.mark.asyncio

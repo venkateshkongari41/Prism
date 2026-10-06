@@ -25,6 +25,7 @@ from app.providers.exceptions import (
     ProviderTemporaryError,
     ProviderTimeoutError,
 )
+from app.api.usage import router as usage_router
 
 
 initialize_database()
@@ -54,6 +55,10 @@ app.include_router(
 
 app.include_router(
     health_router
+)
+
+app.include_router(
+    usage_router
 )
 
 

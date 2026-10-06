@@ -1,6 +1,5 @@
-from typing import Any, AsyncIterator
-
 import httpx
+from typing import Any, AsyncIterator
 
 from app.core.config import settings
 from app.providers.exceptions import (
@@ -23,7 +22,9 @@ class OpenRouterProvider(LLMProvider):
     ) -> dict[str, Any]:
 
         headers = {
-            "Authorization": f"Bearer {settings.openrouter_api_key}",
+            "Authorization": (
+                f"Bearer {settings.openrouter_api_key}"
+            ),
             "Content-Type": "application/json",
         }
 
@@ -39,7 +40,10 @@ class OpenRouterProvider(LLMProvider):
             ) as client:
 
                 response = await client.post(
-                    f"{settings.openrouter_base_url}/chat/completions",
+                    (
+                        f"{settings.openrouter_base_url}"
+                        "/chat/completions"
+                    ),
                     headers=headers,
                     json=payload,
                 )
@@ -71,42 +75,36 @@ class OpenRouterProvider(LLMProvider):
 
         if response.status_code >= 500:
             raise ProviderTemporaryError(
-                f"OpenRouter server error: {response.status_code}"
+                (
+                    "OpenRouter server error: "
+                    f"{response.status_code}"
+                )
             )
 
         response.raise_for_status()
 
         result = response.json()
 
-        usage = result.get("usage")
+        usage = result.get("usage") or {}
 
-        if usage:
-            result["prism_usage"] = {
-                "prompt_tokens": usage.get(
-                    "prompt_tokens",
-                    0,
-                ),
-                "completion_tokens": usage.get(
-                    "completion_tokens",
-                    0,
-                ),
-                "total_tokens": usage.get(
-                    "total_tokens",
-                    0,
-                ),
-                "cost": usage.get(
-                    "cost",
-                    0,
-                ),
-            }
-
-        else:
-            result["prism_usage"] = {
-                "prompt_tokens": 0,
-                "completion_tokens": 0,
-                "total_tokens": 0,
-                "cost": 0,
-            }
+        result["prism_usage"] = {
+            "prompt_tokens": usage.get(
+                "prompt_tokens",
+                0,
+            ),
+            "completion_tokens": usage.get(
+                "completion_tokens",
+                0,
+            ),
+            "total_tokens": usage.get(
+                "total_tokens",
+                0,
+            ),
+            "cost": usage.get(
+                "cost",
+                0,
+            ),
+        }
 
         return result
 
@@ -117,14 +115,20 @@ class OpenRouterProvider(LLMProvider):
     ) -> AsyncIterator[str]:
 
         headers = {
-            "Authorization": f"Bearer {settings.openrouter_api_key}",
+            "Authorization": (
+                f"Bearer {settings.openrouter_api_key}"
+            ),
             "Content-Type": "application/json",
         }
 
+        # Request final usage metadata from OpenRouter.
         payload = {
             "model": model,
             "messages": messages,
             "stream": True,
+            "usage": {
+                "include": True,
+            },
         }
 
         timeout = httpx.Timeout(
@@ -134,6 +138,8 @@ class OpenRouterProvider(LLMProvider):
             pool=10.0,
         )
 
+        done_seen = False
+
         try:
             async with httpx.AsyncClient(
                 timeout=timeout
@@ -141,7 +147,10 @@ class OpenRouterProvider(LLMProvider):
 
                 async with client.stream(
                     "POST",
-                    f"{settings.openrouter_base_url}/chat/completions",
+                    (
+                        f"{settings.openrouter_base_url}"
+                        "/chat/completions"
+                    ),
                     headers=headers,
                     json=payload,
                 ) as response:
@@ -163,7 +172,10 @@ class OpenRouterProvider(LLMProvider):
 
                     if response.status_code >= 500:
                         raise ProviderTemporaryError(
-                            f"OpenRouter server error: {response.status_code}"
+                            (
+                                "OpenRouter server error: "
+                                f"{response.status_code}"
+                            )
                         )
 
                     response.raise_for_status()
@@ -173,8 +185,20 @@ class OpenRouterProvider(LLMProvider):
                         if not line:
                             continue
 
-                        if line.startswith("data:"):
-                            yield f"{line}\n\n"
+                        if not line.startswith("data:"):
+                            continue
+
+                        payload_text = line[5:].strip()
+
+                        if payload_text == "[DONE]":
+                            done_seen = True
+
+                        # Forward each SSE event immediately.
+                        yield f"{line}\n\n"
+
+            # Defensively enforce Prism's terminal stream contract.
+            if not done_seen:
+                yield "data: [DONE]\n\n"
 
         except httpx.TimeoutException as exc:
             raise ProviderTimeoutError(
@@ -183,5 +207,8 @@ class OpenRouterProvider(LLMProvider):
 
         except httpx.RequestError as exc:
             raise ProviderTemporaryError(
-                f"OpenRouter streaming request failed: {exc}"
+                (
+                    "OpenRouter streaming request failed: "
+                    f"{exc}"
+                )
             ) from exc

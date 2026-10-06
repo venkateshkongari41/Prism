@@ -266,7 +266,7 @@ def has_budget_available(
         )
     )
 
-    # 0 means unlimited
+    # 0 means unlimited.
     if monthly_budget <= 0:
         return True
 
@@ -276,10 +276,134 @@ def has_budget_available(
     )
 
 
+def consume_budget(
+    key_id: int,
+    cost: float,
+) -> bool:
+    """
+    Atomically consume monthly budget.
+
+    Returns:
+        True  -> cost was admitted and recorded.
+        False -> request would exceed the monthly budget.
+
+    A zero/negative budget means unlimited, matching the existing
+    budget semantics.
+    """
+
+    if cost <= 0:
+        return True
+
+    connection = get_connection()
+
+    try:
+        # Serialize budget writers so concurrent requests cannot
+        # both observe the same available balance.
+        connection.execute(
+            "BEGIN IMMEDIATE"
+        )
+
+        row = connection.execute(
+            """
+            SELECT
+                id,
+                is_active,
+                monthly_budget,
+                monthly_spend,
+                budget_month
+            FROM api_keys
+            WHERE id = ?
+            """,
+            (key_id,),
+        ).fetchone()
+
+        if row is None:
+            connection.rollback()
+            return False
+
+        if not row["is_active"]:
+            connection.rollback()
+            return False
+
+        current_month = current_budget_month()
+
+        monthly_budget = float(
+            row["monthly_budget"]
+        )
+
+        monthly_spend = float(
+            row["monthly_spend"]
+        )
+
+        # Reset spend when a new month starts.
+        if row["budget_month"] != current_month:
+
+            monthly_spend = 0.0
+
+            connection.execute(
+                """
+                UPDATE api_keys
+                SET
+                    monthly_spend = 0,
+                    budget_month = ?
+                WHERE id = ?
+                """,
+                (
+                    current_month,
+                    key_id,
+                ),
+            )
+
+        # 0 means unlimited.
+        if monthly_budget > 0:
+
+            if (
+                monthly_spend + cost
+                > monthly_budget
+            ):
+                connection.rollback()
+                return False
+
+        # Record the spend.
+        connection.execute(
+            """
+            UPDATE api_keys
+            SET
+                monthly_spend = ?,
+                budget_month = ?
+            WHERE id = ?
+            """,
+            (
+                monthly_spend + cost,
+                current_month,
+                key_id,
+            ),
+        )
+
+        connection.commit()
+
+        return True
+
+    except Exception:
+        connection.rollback()
+        raise
+
+    finally:
+        connection.close()
+
+
 def add_monthly_spend(
     key_id: int,
     cost: float,
 ) -> None:
+    """
+    Legacy/unconditional spend update.
+
+    Kept for compatibility with existing code/tests.
+
+    New request handling should use consume_budget() instead,
+    because consume_budget enforces the budget atomically.
+    """
 
     if cost <= 0:
         return
@@ -403,6 +527,7 @@ def revoke_api_key(
     connection = get_connection()
 
     try:
+
         cursor = connection.execute(
             """
             UPDATE api_keys
